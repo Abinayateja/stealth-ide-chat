@@ -44,7 +44,7 @@ export default function App() {
     };
   }, []);
 
-  // 🔹 Persist clear + history
+  // 🔹 Persist UI state
   useEffect(() => {
     localStorage.setItem("clearTime", clearTime);
   }, [clearTime]);
@@ -85,7 +85,28 @@ export default function App() {
     setInput("");
   };
 
-  // 🔥 FILTER LOGIC (MAIN FEATURE)
+  // 🧨 HARD DELETE (DB WIPE)
+  const deleteAllMessages = async () => {
+    const confirm1 = confirm("Delete ALL messages permanently?");
+    if (!confirm1) return;
+
+    const confirm2 = prompt("Type DELETE to confirm");
+    if (confirm2 !== "DELETE") return;
+
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .neq("id", 0); // deletes all rows
+
+    if (error) {
+      console.error("Delete error:", error);
+    } else {
+      setMessages([]); // instant UI clear
+      alert("All messages deleted");
+    }
+  };
+
+  // 🔥 FILTER LOGIC
   const generateContent = () => {
     if (activeFile !== "messages.dev") {
       return `// ${activeFile}
@@ -125,14 +146,22 @@ function demo() {
               A+
             </button>
 
-            {/* 🔥 CLEAR UI */}
+            {/* 🧼 UI CLEAR */}
             <button onClick={() => setClearTime(Date.now())}>
               Reset Logs
             </button>
 
-            {/* 🔥 TOGGLE HISTORY */}
+            {/* 📜 HISTORY */}
             <button onClick={() => setShowHistory((prev) => !prev)}>
               {showHistory ? "Hide History" : "Show History"}
+            </button>
+
+            {/* 🧨 HARD DELETE */}
+            <button
+              onClick={deleteAllMessages}
+              style={{ color: "#ff4d4f" }}
+            >
+              Wipe DB
             </button>
 
             <Toggle showReal={showReal} setShowReal={setShowReal} />
