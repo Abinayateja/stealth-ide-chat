@@ -3,7 +3,17 @@ import CodeEditor from "./components/Editor";
 import FileExplorer from "./components/FileExplorer";
 import Toggle from "./components/Toggle";
 import { encodeMessage } from "./utils/encodeDecode";
-import { supabase } from "./utils/supabaseClient";
+import { db } from "./utils/firebaseClient";
+import { getDocs, deleteDoc } from "firebase/firestore";
+
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  limit
+} from "firebase/firestore";
 
 export default function App() {
   const [messages, setMessages] = useState([]);
@@ -24,114 +34,63 @@ export default function App() {
     localStorage.setItem("userId", USER_ID);
   }, []);
 
-  // 🔥 Realtime (OPTIMIZED)
+  // 🔥 Firebase Realtime
   useEffect(() => {
-    fetchMessages();
+    const q = query(
+      collection(db, "messages"),
+      orderBy("created_at"),
+      limit(50)
+    );
 
-    const channel = supabase
-      .channel("realtime-messages")
-      .on(
-  "postgres_changes",
-  { event: "INSERT", schema: "public", table: "messages" },
-  (payload) => {
-    setMessages((prev) => {
-      const exists = prev.some(
-        (msg) =>
-          msg.text === payload.new.text &&
-          msg.sender === payload.new.sender
-      );
-
-      if (exists) return prev;
-
-      return [...prev.slice(-49), payload.new];
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setMessages(msgs);
     });
-  }
-)
-      .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, []);
-
-  // 🔹 Persist UI state
-  useEffect(() => {
-    localStorage.setItem("clearTime", clearTime);
-  }, [clearTime]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("clearTime");
-    if (saved) setClearTime(Number(saved));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("showHistory", showHistory);
-  }, [showHistory]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("showHistory");
-    if (saved !== null) setShowHistory(saved === "true");
-  }, []);
-
-  // 🔥 FETCH (LIMITED)
-  const fetchMessages = async () => {
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .limit(50);
-
-    setMessages(data || []);
-  };
 
   const sendMessage = async () => {
-  if (!input) return;
+    if (!input) return;
 
-  const tempMsg = {
-    id: Date.now(),
-    text: input,
-    sender: USER_ID,
-    created_at: new Date().toISOString(),
-  };
+    try {
+      await addDoc(collection(db, "messages"), {
+        text: input,
+        sender: USER_ID,
+        created_at: new Date(),
+      });
 
-  setMessages((prev) => [...prev.slice(-49), tempMsg]); // fixed
-
-  setInput("");
-
-  const { error } = await supabase.from("messages").insert([
-    {
-      text: tempMsg.text,
-      sender: USER_ID,
-    },
-  ]);
-
-  if (error) {
-    console.error("Send failed:", error);
-  }
-};
-
-  // 🧨 HARD DELETE
-  const deleteAllMessages = async () => {
-    const confirm1 = confirm("Delete ALL messages permanently?");
-    if (!confirm1) return;
-
-    const confirm2 = prompt("Type DELETE to confirm");
-    if (confirm2 !== "DELETE") return;
-
-    const { error } = await supabase
-      .from("messages")
-      .delete()
-      .neq("id", 0);
-
-    if (error) {
-      console.error("Delete error:", error);
-    } else {
-      setMessages([]);
-      alert("All messages deleted");
+      setInput("");
+    } catch (err) {
+      console.error("Send failed:", err);
     }
   };
 
-  // 🚀 OPTIMIZED CONTENT GENERATION
+  const deleteAllMessages = async () => {
+  const confirm1 = confirm("Delete ALL messages permanently?");
+  if (!confirm1) return;
+
+  const confirm2 = prompt("Type DELETE to confirm");
+  if (confirm2 !== "DELETE") return;
+
+  try {
+    const snapshot = await getDocs(collection(db, "messages"));
+
+    const deletions = snapshot.docs.map((doc) =>
+      deleteDoc(doc.ref)
+    );
+
+    await Promise.all(deletions);
+
+    alert("All messages deleted");
+  } catch (err) {
+    console.error("Delete failed:", err);
+  }
+};
+
   const content = useMemo(() => {
     if (activeFile !== "messages.dev") {
       return `// ${activeFile}
@@ -178,7 +137,6 @@ function demo() {
             <button onClick={() => setShowHistory((prev) => !prev)}>
               {showHistory ? "Hide History" : "Show History"}
             </button>
-
             <button
               onClick={deleteAllMessages}
               style={{ color: "#ff4d4f" }}
@@ -194,7 +152,7 @@ function demo() {
 
         <div className="inputBar">
           <input
-            type="password"
+            type="text"
             placeholder="> run command..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
