@@ -31,12 +31,22 @@ export default function App() {
     const channel = supabase
       .channel("realtime-messages")
       .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          setMessages((prev) => [...prev.slice(-49), payload.new]); // keep last 50
-        }
-      )
+  "postgres_changes",
+  { event: "INSERT", schema: "public", table: "messages" },
+  (payload) => {
+    setMessages((prev) => {
+      const exists = prev.some(
+        (msg) =>
+          msg.text === payload.new.text &&
+          msg.sender === payload.new.sender
+      );
+
+      if (exists) return prev;
+
+      return [...prev.slice(-49), payload.new];
+    });
+  }
+)
       .subscribe();
 
     return () => {
@@ -75,17 +85,30 @@ export default function App() {
   };
 
   const sendMessage = async () => {
-    if (!input) return;
+  if (!input) return;
 
-    await supabase.from("messages").insert([
-      {
-        text: input,
-        sender: USER_ID,
-      },
-    ]);
-
-    setInput("");
+  const tempMsg = {
+    id: Date.now(),
+    text: input,
+    sender: USER_ID,
+    created_at: new Date().toISOString(),
   };
+
+  setMessages((prev) => [...prev.slice(-49), tempMsg]); // fixed
+
+  setInput("");
+
+  const { error } = await supabase.from("messages").insert([
+    {
+      text: tempMsg.text,
+      sender: USER_ID,
+    },
+  ]);
+
+  if (error) {
+    console.error("Send failed:", error);
+  }
+};
 
   // 🧨 HARD DELETE
   const deleteAllMessages = async () => {
