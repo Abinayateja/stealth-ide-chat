@@ -22,6 +22,7 @@ export default function App() {
   const [activeFile, setActiveFile] = useState("messages.dev");
   const [clearTime, setClearTime] = useState(0);
   const [showHistory, setShowHistory] = useState(true);
+  const [showInput, setShowInput] = useState(false);
 
   const [fontSize, setFontSize] = useState(
     Number(localStorage.getItem("fontSize")) || 13
@@ -53,6 +54,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+  const handler = (e) => {
+    // CTRL + LEFT → toggle real/code
+    if (e.ctrlKey && e.key === "ArrowLeft") {
+      setShowReal((prev) => !prev);
+    }
+
+    // CTRL + SHIFT + X → wipe DB
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "x") {
+      deleteAllMessages();
+    }
+  };
+
+  window.addEventListener("keydown", handler);
+  return () => window.removeEventListener("keydown", handler);
+}, []);
+
   const sendMessage = async () => {
     if (!input) return;
 
@@ -68,6 +86,27 @@ export default function App() {
       console.error("Send failed:", err);
     }
   };
+
+  const handleImageUpload = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onloadend = async () => {
+  const base64 = reader.result;
+
+  await addDoc(collection(db, "messages"), {
+    image: base64,
+    sender: USER_ID,
+    created_at: new Date(),
+  });
+
+  e.target.value = ""; // ✅ reset file input
+};
+
+  reader.readAsDataURL(file);
+};
 
   const deleteAllMessages = async () => {
   const confirm1 = confirm("Delete ALL messages permanently?");
@@ -105,12 +144,20 @@ function demo() {
         return new Date(msg.created_at).getTime() > clearTime;
       })
       .map((msg, i) => {
-        const isMe = msg.sender === USER_ID;
+  const isMe = msg.sender === USER_ID;
 
-        return showReal
-          ? `// ${isMe ? "[me]" : "[peer]"} ${msg.text}`
-          : encodeMessage(msg.text, i);
-      })
+  // 🖼️ IMAGE MESSAGE
+  if (msg.image) {
+  return showReal
+    ? `<img src="${msg.image}" style="max-width:200px;border-radius:6px;" />`
+    : `// 📦 image_${i}`;
+}
+
+  // 💬 TEXT MESSAGE
+  return showReal
+    ? `// ${isMe ? "[me]" : "[peer]"} ${msg.text}`
+    : encodeMessage(msg.text, i);
+})
       .join("\n\n");
   }, [messages, showHistory, clearTime, showReal, activeFile]);
 
@@ -149,23 +196,58 @@ function demo() {
         </div>
 
         <CodeEditor content={content} fontSize={fontSize} />
+        {showReal && (
+  <div className="preview">
+    {messages.map((msg, i) => {
+      if (!msg.image) return null; // ✅ ONLY images
+
+      return (
+        <img
+          key={i}
+          src={msg.image}
+          style={{
+            maxWidth: "220px",
+            borderRadius: "8px",
+            margin: "8px",
+            border: "1px solid #333"
+          }}
+        />
+      );
+    })}
+  </div>
+)}
 
         <div className="inputBar">
-          <input
-            type="password"
-            placeholder="> run command..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                sendMessage();
-              }
-            }}
-          />
+  <input
+    type={showInput ? "text" : "password"}
+    placeholder="> run command..."
+    value={input}
+    onChange={(e) => setInput(e.target.value)}
+    onKeyDown={(e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendMessage();
+      }
+    }}
+  />
 
-          <button onClick={sendMessage}>Send</button>
-        </div>
+  <button onClick={() => setShowInput((prev) => !prev)}>
+    {showInput ? "🙈" : "👁️"}
+  </button>
+
+  <input
+  type="file"
+  accept="image/*"
+  style={{ display: "none" }}
+  id="imgUpload"
+  onChange={handleImageUpload}
+/>
+
+<button onClick={() => document.getElementById("imgUpload").click()}>
+  📎
+</button>
+  <button onClick={sendMessage}>Send</button>
+</div>
       </div>
     </div>
   );

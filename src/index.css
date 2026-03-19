@@ -109,3 +109,11 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+.preview {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 10px;
+  background: #1e1e1e;
+  border-top: 1px solid #333;
+}
