@@ -1,14 +1,11 @@
-const randomVar = () => {
-  const vars = ["data", "payload", "cache", "temp", "buffer"];
-  return vars[Math.floor(Math.random() * vars.length)];
-};
+// 🚀 Deterministic + stable (no random = no re-render lag)
 
 export const encodeMessage = (msg, id) => {
-  const varName = randomVar();
+  const varName = `data_${id}`;
 
   return `/**
- * Module: MessageService
- * Build: v${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}
+ * Message Module
+ * Stable Build
  */
 export const msg_${id} = () => {
   const ${varName} = "${btoa(msg)}";

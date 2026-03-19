@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import CodeEditor from "./components/Editor";
 import FileExplorer from "./components/FileExplorer";
 import Toggle from "./components/Toggle";
@@ -24,7 +24,7 @@ export default function App() {
     localStorage.setItem("userId", USER_ID);
   }, []);
 
-  // 🔥 Realtime
+  // 🔥 Realtime (OPTIMIZED)
   useEffect(() => {
     fetchMessages();
 
@@ -32,9 +32,9 @@ export default function App() {
       .channel("realtime-messages")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        async () => {
-          await fetchMessages();
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          setMessages((prev) => [...prev.slice(-49), payload.new]); // keep last 50
         }
       )
       .subscribe();
@@ -63,11 +63,13 @@ export default function App() {
     if (saved !== null) setShowHistory(saved === "true");
   }, []);
 
+  // 🔥 FETCH (LIMITED)
   const fetchMessages = async () => {
     const { data } = await supabase
       .from("messages")
       .select("*")
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .limit(50);
 
     setMessages(data || []);
   };
@@ -85,7 +87,7 @@ export default function App() {
     setInput("");
   };
 
-  // 🧨 HARD DELETE (DB WIPE)
+  // 🧨 HARD DELETE
   const deleteAllMessages = async () => {
     const confirm1 = confirm("Delete ALL messages permanently?");
     if (!confirm1) return;
@@ -96,18 +98,18 @@ export default function App() {
     const { error } = await supabase
       .from("messages")
       .delete()
-      .neq("id", 0); // deletes all rows
+      .neq("id", 0);
 
     if (error) {
       console.error("Delete error:", error);
     } else {
-      setMessages([]); // instant UI clear
+      setMessages([]);
       alert("All messages deleted");
     }
   };
 
-  // 🔥 FILTER LOGIC
-  const generateContent = () => {
+  // 🚀 OPTIMIZED CONTENT GENERATION
+  const content = useMemo(() => {
     if (activeFile !== "messages.dev") {
       return `// ${activeFile}
 function demo() {
@@ -125,10 +127,10 @@ function demo() {
 
         return showReal
           ? `// ${isMe ? "[me]" : "[peer]"} ${msg.text}`
-          : encodeMessage(msg.text, i, msg.sender);
+          : encodeMessage(msg.text, i);
       })
       .join("\n\n");
-  };
+  }, [messages, showHistory, clearTime, showReal, activeFile]);
 
   return (
     <div className="app">
@@ -146,17 +148,14 @@ function demo() {
               A+
             </button>
 
-            {/* 🧼 UI CLEAR */}
             <button onClick={() => setClearTime(Date.now())}>
               Reset Logs
             </button>
 
-            {/* 📜 HISTORY */}
             <button onClick={() => setShowHistory((prev) => !prev)}>
               {showHistory ? "Hide History" : "Show History"}
             </button>
 
-            {/* 🧨 HARD DELETE */}
             <button
               onClick={deleteAllMessages}
               style={{ color: "#ff4d4f" }}
@@ -168,7 +167,7 @@ function demo() {
           </div>
         </div>
 
-        <CodeEditor content={generateContent()} fontSize={fontSize} />
+        <CodeEditor content={content} fontSize={fontSize} />
 
         <div className="inputBar">
           <input
