@@ -152,7 +152,7 @@ function demo() {
 
         <div className="inputBar">
           <input
-            type="text"
+            type="password"
             placeholder="> run command..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
