@@ -87,20 +87,25 @@ function TreeNode({ item, depth, activeFile, onFileClick, collapsed, toggleFolde
   );
 }
 
-export default function DevFileExplorer({ setActiveFile, activeFile, onOpenTab }) {
+export default function DevFileExplorer({ setActiveFile, activeFile, onOpenTab,className }) {
   const [collapsed, setCollapsed] = useState({});
 
   const toggleFolder = (name) => {
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
   };
 
-  const handleFileClick = (name) => {
-    setActiveFile(name);
-    onOpenTab?.(name);
-  };
+ const handleFileClick = (name) => {
+  setActiveFile(name);
+  onOpenTab?.(name);
+
+  // 🔥 CLOSE SIDEBAR ON MOBILE
+  if (window.innerWidth <= 768) {
+    document.querySelector(".sidebar")?.classList.remove("open");
+  }
+};
 
   return (
-    <div className="sidebar">
+      <div className={className || "sidebar"}>
       <div className="explorer-header">
         <div className="explorer-title">Explorer</div>
       </div>

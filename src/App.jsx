@@ -8,6 +8,7 @@ import mockFiles from "./utils/mockFiles";
 
 import { encodeMessage } from "./utils/encodeDecode";
 import { db } from "./utils/firebaseClient";
+import { useRef } from "react";
 
 import {
   collection,
@@ -34,6 +35,9 @@ export default function App() {
 
   const [openTabs, setOpenTabs] = useState(["messages.dev"]);
   const [peerTyping, setPeerTyping] = useState(false);
+  const bottomRef = useRef(null);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const isAtBottomRef = useRef(true);
 
   const [fontSize, setFontSize] = useState(
     Number(localStorage.getItem("fontSize")) || 13
@@ -45,6 +49,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("userId", USER_ID);
   }, []);
+
+  useEffect(() => {
+  const el = document.querySelector(".editor-container");
+  if (!el) return;
+
+  if (isAtBottomRef.current) {
+    el.scrollTop = el.scrollHeight;
+  }
+}, [messages]);
 
   useEffect(() => {
     const q = query(
@@ -161,17 +174,27 @@ useEffect(() => {
   };
 
   const sendMessage = async () => {
-    if (!input) return;
+  if (!input) return;
 
-    await addDoc(collection(db, "messages"), {
-      text: input,
-      sender: USER_ID,
-      created_at: new Date(),
-    });
+  const text = input;
+  setInput("");
 
-    setInput("");
-    updateTyping(false);
-  };
+  await addDoc(collection(db, "messages"), {
+    text,
+    sender: USER_ID,
+    created_at: new Date(),
+  });
+
+  // 🔥 FORCE SCROLL AFTER SENDING
+  setTimeout(() => {
+    const el = document.querySelector(".editor-container");
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, 100);
+
+  updateTyping(false);
+};
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
@@ -227,6 +250,7 @@ useEffect(() => {
   return (
     <div className="app-container">
       <FileExplorer
+      className={showSidebar ? "sidebar open" : "sidebar"}
         setActiveFile={(f) => {
           setActiveFile(f);
           handleOpenTab(f);
@@ -243,7 +267,9 @@ useEffect(() => {
 
         {/* ✅ FIXED TOPBAR */}
         <div className="topbar">
+          <button className="menu-btn" onClick={() => setShowSidebar(p => !p)}>☰</button>
           <span className="topbar-filename">{activeFile}</span>
+          
 
           <div className="controls">
             <button className="ctrl-btn" onClick={() => setFontSize((f) => f - 1)}>A−</button>
@@ -263,6 +289,7 @@ useEffect(() => {
         </div>
 
         <CodeEditor content={content} fontSize={fontSize} />
+        <div ref={bottomRef} />
 
         {showReal && (
           <div className="preview-area">
@@ -276,13 +303,24 @@ useEffect(() => {
         <div className="input-bar">
           <TypingIndicator visible={peerTyping} />
 
-          <input
-            type={showInput ? "text" : "password"}
-            placeholder="> run command..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          />
+          <textarea
+  rows={1}
+  placeholder="> run command..."
+  value={input}
+  onChange={(e) => {
+    setInput(e.target.value);
+
+    // 🔥 AUTO RESIZE
+    e.target.style.height = "auto";
+    e.target.style.height = e.target.scrollHeight + "px";
+  }}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }}
+/>
 
           <button
             className="icon-btn"
