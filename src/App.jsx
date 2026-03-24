@@ -74,20 +74,17 @@ export default function App() {
       setMessages((prev) => {
   const lastMsg = msgs[msgs.length - 1];
 
-  if (
-    lastMsg &&
-    lastMsg.sender !== USER_ID &&
-    window.innerWidth <= 768
-  ) {
-    // 🔥 VIBRATION
-    if ("vibrate" in navigator) {
-      navigator.vibrate([50, 50, 50]);
-    }
+  if (lastMsg && lastMsg.sender !== USER_ID) {
+  const favicon = document.getElementById("favicon");
 
-    // 🔥 SOUND
-    const audio = new Audio("/notify.mp3");
-    audio.play().catch(() => {});
+  // 🔴 change icon
+  if (favicon) {
+    favicon.href = "/alert-icon.png";
   }
+
+  // 🔥 subtle tab title
+  document.title = "• T C A E R";
+}
 
   return msgs;
 });
@@ -138,6 +135,22 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [input, updateTyping]);
+
+  useEffect(() => {
+  const handleFocus = () => {
+    const favicon = document.getElementById("favicon");
+
+    if (favicon) {
+      favicon.href = "/icon-192.png";
+    }
+
+    document.title = "R E A C T";
+  };
+
+  window.addEventListener("focus", handleFocus);
+
+  return () => window.removeEventListener("focus", handleFocus);
+}, []);
 
   // 🔥 KEYBOARD SHORTCUTS
 useEffect(() => {
@@ -270,7 +283,7 @@ useEffect(() => {
           ? `// ${isMe ? "[me]" : "[peer]"} ${msg.text}`
           : encodeMessage(msg.text, i);
       })
-      .join("\n\n");
+      .join("\n\n") + "\n\n\n\n\n\n\n\n";
   }, [messages, showHistory, clearTime, showReal, activeFile]);
 
   return (
@@ -298,19 +311,13 @@ useEffect(() => {
           
 
           <div className="controls">
-            <button className="ctrl-btn" onClick={() => setFontSize((f) => f - 1)}>A−</button>
-            <button className="ctrl-btn" onClick={() => setFontSize((f) => f + 1)}>A+</button>
-            <button className="ctrl-btn" onClick={() => setClearTime(Date.now())}>
-              Reset Logs
-            </button>
-            <button className="ctrl-btn" onClick={() => setShowHistory((p) => !p)}>
-              Toggle History
-            </button>
+            
             <button className="ctrl-btn danger" onClick={deleteAllMessages}>
               Wipe DB
             </button>
-
             <Toggle showReal={showReal} setShowReal={setShowReal} />
+            <button className="ctrl-btn" onClick={() => setFontSize((f) => f - 1)}>A−</button>
+            <button className="ctrl-btn" onClick={() => setFontSize((f) => f + 1)}>A+</button>
           </div>
         </div>
 
