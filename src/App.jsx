@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import CodeEditor from "./components/Editor";
 import FileExplorer from "./components/FileExplorer";
 import Toggle from "./components/Toggle";
 import Tabs from "./components/Tabs";
-import TypingIndicator from "./components/TypingIndicator";
 import mockFiles from "./utils/mockFiles";
 
 import { encodeMessage } from "./utils/encodeDecode";
@@ -19,8 +18,6 @@ import {
   limit,
   getDocs,
   deleteDoc,
-  setDoc,
-  doc,
   serverTimestamp,
 } from "firebase/firestore";
 
@@ -32,12 +29,13 @@ export default function App() {
   const [clearTime, setClearTime] = useState(0);
   const [showHistory, setShowHistory] = useState(true);
   const [showInput, setShowInput] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const [openTabs, setOpenTabs] = useState(["messages.dev"]);
-  const [peerTyping, setPeerTyping] = useState(false);
   const bottomRef = useRef(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const isAtBottomRef = useRef(true);
+  const lastSeenRef = useRef(null);
 
   const [fontSize, setFontSize] = useState(
     Number(localStorage.getItem("fontSize")) || 13
@@ -45,6 +43,10 @@ export default function App() {
 
   const USER_ID =
     localStorage.getItem("userId") || crypto.randomUUID();
+
+    useEffect(() => {
+  console.log("🔥 USER_ID:", USER_ID);
+}, []);
 
   useEffect(() => {
     localStorage.setItem("userId", USER_ID);
@@ -63,78 +65,40 @@ export default function App() {
     const q = query(
       collection(db, "messages"),
       orderBy("created_at"),
-      limit(50)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMessages((prev) => {
-  const lastMsg = msgs[msgs.length - 1];
+  const fresh = snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
 
-  if (lastMsg && lastMsg.sender !== USER_ID) {
-  const favicon = document.getElementById("favicon");
+  setMessages(fresh);
 
-  // 🔴 change icon
-  if (favicon) {
-    favicon.href = "/alert-icon.png";
-  }
+  const lastMsg = fresh[fresh.length - 1];
 
-  // 🔥 subtle tab title
-  document.title = "• T C A E R";
-}
+if (!lastMsg) return;
 
-  return msgs;
+// ignore own message
+if (lastMsg.sender === USER_ID) return;
+
+// ignore already seen
+if (lastSeenRef.current === lastMsg.id) return;
+
+// ignore if tab is active
+if (document.visibilityState === "visible") return;
+
+// new message detected
+lastSeenRef.current = lastMsg.id;
+
+const favicon = document.getElementById("favicon");
+if (favicon) favicon.href = "/alert-icon.png";
+
+document.title = "•••••••••";
 });
-    });
 
     return () => unsubscribe();
   }, []);
-  
-  useEffect(() => {
-  import("./firebase-messaging").then(({ initNotifications, listenMessages }) => {
-    initNotifications();
-    listenMessages();
-  });
-}, []);
-
-  useEffect(() => {
-    const typingRef = collection(db, "typing");
-
-    const unsubscribe = onSnapshot(typingRef, (snapshot) => {
-      const typingUsers = snapshot.docs
-        .map((doc) => doc.data())
-        .filter((d) => d.userId !== USER_ID && d.isTyping);
-
-      setPeerTyping(typingUsers.length > 0);
-    });
-
-    return () => unsubscribe();
-  }, [USER_ID]);
-
-  const updateTyping = useCallback(
-    async (isTyping) => {
-      try {
-        await setDoc(doc(db, "typing", USER_ID), {
-          userId: USER_ID,
-          isTyping,
-          timestamp: serverTimestamp(),
-        });
-      } catch {}
-    },
-    [USER_ID]
-  );
-
-  useEffect(() => {
-    if (!input) return;
-
-    updateTyping(true);
-    const timer = setTimeout(() => updateTyping(false), 1500);
-
-    return () => clearTimeout(timer);
-  }, [input, updateTyping]);
 
   useEffect(() => {
   const handleFocus = () => {
@@ -212,27 +176,38 @@ useEffect(() => {
     });
   };
 
-  const sendMessage = async () => {
-  if (!input) return;
+ const sendMessage = async () => {
+  if (!input.trim() || isSending) return;
+
+  setIsSending(true);
 
   const text = input;
   setInput("");
 
-  await addDoc(collection(db, "messages"), {
+  const clientId = crypto.randomUUID(); // 🔥 KEY
+
+  const tempMsg = {
+    id: "temp-" + clientId,
     text,
     sender: USER_ID,
-    created_at: new Date(),
-  });
+    clientId, // 🔥 important
+    created_at: { seconds: Math.floor(Date.now() / 1000) }
+  };
 
-  // 🔥 FORCE SCROLL AFTER SENDING
-  setTimeout(() => {
-    const el = document.querySelector(".editor-container");
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, 100);
+  setMessages(prev => [...prev, tempMsg]);
 
-  updateTyping(false);
+  try {
+    await addDoc(collection(db, "messages"), {
+      text,
+      sender: USER_ID,
+      clientId, // 🔥 send to firestore
+      created_at: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("SEND ERROR:", err);
+  }
+
+  setIsSending(false);
 };
 
   const handleImageUpload = (e) => {
@@ -245,7 +220,7 @@ useEffect(() => {
       await addDoc(collection(db, "messages"), {
         image: reader.result,
         sender: USER_ID,
-        created_at: new Date(),
+        created_at: serverTimestamp(),
       });
 
       e.target.value = "";
@@ -255,9 +230,12 @@ useEffect(() => {
   };
 
   const deleteAllMessages = async () => {
-    const snapshot = await getDocs(collection(db, "messages"));
-    await Promise.all(snapshot.docs.map((doc) => deleteDoc(doc.ref)));
-  };
+  // ⚡ instant UI clear
+  setMessages([]);
+
+  const snapshot = await getDocs(collection(db, "messages"));
+  await Promise.all(snapshot.docs.map((doc) => deleteDoc(doc.ref)));
+};
 
   const content = useMemo(() => {
     if (activeFile !== "messages.dev") {
@@ -268,7 +246,7 @@ useEffect(() => {
       .filter((msg) =>
         showHistory
           ? true
-          : new Date(msg.created_at).getTime() > clearTime
+          : msg.created_at?.seconds * 1000 > clearTime
       )
       .map((msg, i) => {
         const isMe = msg.sender === USER_ID;
@@ -334,7 +312,6 @@ useEffect(() => {
 
         {/* ✅ FIXED INPUT BAR */}
         <div className="input-bar">
-          <TypingIndicator visible={peerTyping} />
 
           <textarea
   rows={1}
@@ -348,11 +325,11 @@ useEffect(() => {
     e.target.style.height = e.target.scrollHeight + "px";
   }}
   onKeyDown={(e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }}
+  if (e.key === "Enter" && !e.shiftKey && !isSending) {
+    e.preventDefault();
+    sendMessage();
+  }
+}}
 />
 
           <button
