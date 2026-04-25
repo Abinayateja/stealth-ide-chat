@@ -8,6 +8,7 @@ import mockFiles from "./utils/mockFiles";
 import { encodeMessage } from "./utils/encodeDecode";
 import { db } from "./utils/firebaseClient";
 
+
 import { useRef } from "react";
 
 import {
@@ -23,6 +24,12 @@ import {
   deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
+
+const formatTime = (ts) => {
+  if (!ts?.seconds) return "";
+  const d = new Date(ts.seconds * 1000);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
 
 function initGame() {
   const colors = ["R", "G", "B", "Y"];
@@ -135,7 +142,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(true);
   const [showInput, setShowInput] = useState(false);
   const [isSending, setIsSending] = useState(false);
-
+  const [isTyping, setIsTyping] = useState(false);
   const [openTabs, setOpenTabs] = useState(["messages.dev"]);
   const bottomRef = useRef(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -404,8 +411,8 @@ const handleGameRestart = async () => {
   : msg.text;
           }
           return showReal
-            ? "// " + (isMe ? "[me]" : "[peer]") + " " + msg.text
-            : encodeMessage(msg.text, i);
+  ? `// ${isMe ? "[me]" : "[peer]"} (${formatTime(msg.created_at)}) ${msg.text}`
+  : encodeMessage(msg.text, i);
         })
         .join("\n\n") + "\n\n\n\n\n\n\n\n"
     );
