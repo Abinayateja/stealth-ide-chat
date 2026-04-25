@@ -149,7 +149,11 @@ export default function App() {
   const isAtBottomRef = useRef(true);
   const lastSeenRef = useRef(null);
  const gameDocRef = doc(db, "game", "room1");
-
+ const [selectedImage, setSelectedImage] = useState(null);
+ const [mediaRecorder, setMediaRecorder] = useState(null);
+const [audioChunks, setAudioChunks] = useState([]);
+const [isRecording, setIsRecording] = useState(false);
+const [mediaStream, setMediaStream] = useState(null);
   const [gameState, setGameState] = useState(null);
 
   const [fontSize, setFontSize] = useState(
@@ -322,21 +326,84 @@ const startGame = async () => {
 const handleGameRestart = async () => {
   await setDoc(gameDocRef, initGame());
 };
+const handleImageUpload = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      await addDoc(collection(db, "messages"), {
-        image: reader.result,
-        sender: USER_ID,
-        created_at: serverTimestamp(),
-      });
-      e.target.value = "";
-    };
-    reader.readAsDataURL(file);
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", "chat_upload");
+
+  const res = await fetch(
+    "https://api.cloudinary.com/v1_1/dcfzrytu1/image/upload",
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const data = await res.json();
+
+  await addDoc(collection(db, "messages"), {
+    imageUrl: data.secure_url,
+    sender: USER_ID,
+    created_at: serverTimestamp(),
+  });
+};
+
+const startRecording = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  setMediaStream(stream);
+  const recorder = new MediaRecorder(stream);
+
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) {
+      setAudioChunks((prev) => [...prev, e.data]);
+    }
   };
+
+  recorder.start();
+  setMediaRecorder(recorder);
+  setIsRecording(true);
+};
+
+const stopRecording = async () => {
+  if (!mediaRecorder) return;
+
+  mediaRecorder.stop();
+  setIsRecording(false);
+
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(audioChunks, { type: "audio/webm" });
+
+    const formData = new FormData();
+    formData.append("file", blob);
+    formData.append("upload_preset", "chat_upload");
+
+    const res = await fetch(
+      "https://api.cloudinary.com/v1_1/dcfzrytu1/video/upload",
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    const data = await res.json();
+
+    await addDoc(collection(db, "messages"), {
+      audioUrl: data.secure_url,
+      sender: USER_ID,
+      created_at: serverTimestamp(),
+    });
+
+    setAudioChunks([]);
+
+    // ✅ STOP MIC HERE
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+    }
+  };
+};
 
   const deleteAllMessages = async () => {
     setMessages([]);
@@ -405,11 +472,16 @@ const handleGameRestart = async () => {
         )
         .map((msg, i) => {
           const isMe = msg.sender === USER_ID;
-          if (msg.image) {
-            return showReal
-  ? "// " + (isMe ? "[me]" : "[peer]") + " " + msg.text
-  : msg.text;
-          }
+          if (msg.imageUrl) {
+  return showReal
+    ? `// ${isMe ? "[me]" : "[peer]"} (${formatTime(msg.created_at)}) [image]`
+    : encodeMessage("[image]", i);
+}
+if (msg.audioUrl) {
+  return showReal
+    ? `// ${isMe ? "[me]" : "[peer]"} (${formatTime(msg.created_at)}) [voice]`
+    : encodeMessage("[voice]", i);
+}
           return showReal
   ? `// ${isMe ? "[me]" : "[peer]"} (${formatTime(msg.created_at)}) ${msg.text}`
   : encodeMessage(msg.text, i);
@@ -460,12 +532,36 @@ const handleGameRestart = async () => {
         <div ref={bottomRef} />
 
         {showReal && (
-          <div className="preview-area">
-            {messages.map((msg, i) =>
-              msg.image ? <img key={i} src={msg.image} /> : null
-            )}
-          </div>
-        )}
+  <div className="preview-area">
+    {messages.map((msg, i) =>
+      msg.imageUrl ? (
+        <img
+          key={i}
+          src={msg.imageUrl}
+          onClick={() => setSelectedImage(msg.imageUrl)}
+          style={{
+            maxWidth: "200px",
+            maxHeight: "180px",
+            objectFit: "contain",
+            borderRadius: "8px",
+            cursor: "pointer"
+          }}
+        />
+      ) : msg.audioUrl ? (
+        <audio
+          key={i}
+          controls
+          src={msg.audioUrl}
+          style={{
+            display: "block",
+            marginBottom: "10px",
+            width: "200px"
+          }}
+        />
+      ) : null
+    )}
+  </div>
+)}
 
         {/* Game controls bar - replaces input bar when on game.dev */}
         {activeFile === "game.dev" && gameState ? (
@@ -529,13 +625,69 @@ const handleGameRestart = async () => {
             <button className="icon-btn" onClick={() => document.getElementById("imgUpload").click()}>
               file
             </button>
-
+            
             <button className="send-btn" onClick={sendMessage}>
               Send
             </button>
           </div>
         )}
       </div>
+      {selectedImage && (
+  <div
+    onClick={() => setSelectedImage(null)}
+    style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100vw",
+      height: "100vh",
+      background: "rgba(0,0,0,0.8)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 9999
+    }}
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "relative"
+      }}
+    >
+      {/* CLOSE BUTTON */}
+      <span
+        onClick={() => setSelectedImage(null)}
+        style={{
+          position: "absolute",
+          top: "-10px",
+          right: "-10px",
+          background: "#fff",
+          color: "#000",
+          borderRadius: "50%",
+          width: "25px",
+          height: "25px",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          cursor: "pointer",
+          fontWeight: "bold"
+        }}
+      >
+        ✕
+      </span>
+
+      {/* IMAGE */}
+      <img
+        src={selectedImage}
+        style={{
+          maxWidth: "90vw",
+          maxHeight: "90vh",
+          borderRadius: "10px"
+        }}
+      />
+    </div>
+  </div>
+)}
     </div>
   );
 }
