@@ -29,6 +29,7 @@ const tree = [
     ]
   },
   { name: "messages.dev", type: "file" },
+  { name: "game.dev", type: "file" },
   { name: ".env", type: "file" },
 ];
 
