@@ -219,7 +219,7 @@ const startGame = async () => {
 
       const favicon = document.getElementById("favicon");
       if (favicon) favicon.href = "/alert-icon.png";
-      document.title = "new message";
+      document.title = ":) .....";
     });
 
     return () => unsubscribe();
